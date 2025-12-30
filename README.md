@@ -1,6 +1,7 @@
 # Multilingual Audio/Video Transcriber with Speaker Diarization
 
 This application allows you to upload audio and video files (MP3, MP4, WAV, M4A), transcribe them using OpenAI Whisper (via `faster-whisper`), and identify different speakers using `pyannote-audio`. It is designed to work locally with NVIDIA GPU (CUDA) support.
+![img.png](img.png)
 
 ## Features
 - **Multilingual Support**: Automatically detects and transcribes multiple languages (e.g., Russian and English) in the same audio file.

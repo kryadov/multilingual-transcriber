@@ -37,8 +37,9 @@
             <button id="uploadBtn" onclick="uploadFile()">Upload & Process</button>
             
             <div id="uploadProgressContainer" class="upload-progress-container">
-                <div class="upload-progress-text">Uploading: <span id="uploadPercent">0</span>%</div>
+                <div class="upload-progress-text"><span id="progressLabel">Uploading</span>: <span id="uploadPercent">0</span>%</div>
                 <div class="progress-bar"><div id="uploadProgressFill" class="progress-fill" style="width: 0%"></div></div>
+                <div id="progressMessage" style="font-size: 0.8em; color: #666; margin-top: 5px;"></div>
             </div>
         </div>
 
@@ -55,6 +56,8 @@
             const uploadProgressContainer = document.getElementById('uploadProgressContainer');
             const uploadProgressFill = document.getElementById('uploadProgressFill');
             const uploadPercent = document.getElementById('uploadPercent');
+            const progressLabel = document.getElementById('progressLabel');
+            const progressMessage = document.getElementById('progressMessage');
 
             if (fileInput.files.length === 0) {
                 alert('Please select a file');
@@ -68,6 +71,8 @@
             uploadProgressContainer.style.display = 'block';
             uploadProgressFill.style.width = '0%';
             uploadPercent.innerText = '0';
+            progressLabel.innerText = 'Uploading';
+            progressMessage.innerText = '';
 
             try {
                 const xhr = new XMLHttpRequest();
@@ -78,6 +83,10 @@
                             const percent = Math.round((e.loaded * 100) / e.total);
                             uploadProgressFill.style.width = percent + '%';
                             uploadPercent.innerText = percent;
+                            if (percent === 100) {
+                                progressLabel.innerText = 'Processing';
+                                progressMessage.innerText = 'Finalizing upload...';
+                            }
                         }
                     });
 
@@ -105,9 +114,11 @@
                     xhr.send(formData);
                 });
 
-                await uploadPromise;
+                const result = await uploadPromise;
                 fileInput.value = '';
-                uploadProgressContainer.style.display = 'none';
+                
+                // Switch to monitoring the background task
+                await monitorTask(result.task_id);
                 fetchTasks();
             } catch (error) {
                 console.error('Error:', error);
@@ -116,6 +127,49 @@
             } finally {
                 uploadBtn.disabled = false;
             }
+        }
+
+        async function monitorTask(taskId) {
+            const progressLabel = document.getElementById('progressLabel');
+            const uploadPercent = document.getElementById('uploadPercent');
+            const uploadProgressFill = document.getElementById('uploadProgressFill');
+            const progressMessage = document.getElementById('progressMessage');
+            const uploadProgressContainer = document.getElementById('uploadProgressContainer');
+
+            progressLabel.innerText = 'Processing';
+            
+            return new Promise((resolve) => {
+                const interval = setInterval(async () => {
+                    try {
+                        const response = await fetch(`/api/status/${taskId}`);
+                        if (!response.ok) {
+                            clearInterval(interval);
+                            resolve();
+                            return;
+                        }
+                        const task = await response.json();
+                        
+                        uploadPercent.innerText = task.progress;
+                        uploadProgressFill.style.width = task.progress + '%';
+                        progressMessage.innerText = task.message || '';
+                        
+                        // Update task list while monitoring
+                        fetchTasks();
+
+                        if (task.status === 'completed' || task.status === 'failed') {
+                            clearInterval(interval);
+                            setTimeout(() => {
+                                uploadProgressContainer.style.display = 'none';
+                                resolve();
+                            }, 1500);
+                        }
+                    } catch (e) {
+                        console.error('Error monitoring task:', e);
+                        clearInterval(interval);
+                        resolve();
+                    }
+                }, 1000);
+            });
         }
 
         async function fetchTasks() {

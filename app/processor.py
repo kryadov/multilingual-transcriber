@@ -68,7 +68,7 @@ class AudioProcessor:
         
         if self.diarization_pipeline:
             try:
-                update_progress(10, "Running diarization...")
+                update_progress(35, "Running diarization...")
                 print("Running diarization...")
                 waveform, sample_rate = torchaudio.load(audio_path)
                 
@@ -76,6 +76,7 @@ class AudioProcessor:
                 if waveform.shape[0] > 1:
                     waveform = torch.mean(waveform, dim=0, keepdim=True)
                 
+                update_progress(40, "Diarization in progress...")
                 diarization = self.diarization_pipeline({"waveform": waveform, "sample_rate": sample_rate})
                 
                 # Some versions/configurations return an Annotation, others a wrapper object (DiarizeOutput)
@@ -100,9 +101,10 @@ class AudioProcessor:
                         "speaker": speaker
                     })
                 print(f"Diarization completed. Found {len(speakers_map)} segments.")
+                update_progress(50, "Diarization completed.")
             except Exception as e:
                 print(f"Diarization failed: {e}")
-                update_progress(40, f"Diarization failed: {e}")
+                update_progress(50, f"Diarization failed: {e}")
                 speakers_map = []
 
         final_segments = []
@@ -111,7 +113,7 @@ class AudioProcessor:
         # 2. Transcription
         if not speakers_map:
             # Fallback: transcribe whole file if diarization failed or not available
-            update_progress(45, "Running whole-file transcription...")
+            update_progress(50, "Running whole-file transcription...")
             print("Running whole-file transcription...")
             segments, info = self.whisper_model.transcribe(
                 audio_path,
@@ -120,7 +122,7 @@ class AudioProcessor:
                 initial_prompt=initial_prompt
             )
             
-            # This is hard to track progress for a single call, but we can at least say it's working
+            duration = info.duration
             for segment in segments:
                 final_segments.append(TranscriptionSegment(
                     start=segment.start,
@@ -129,6 +131,11 @@ class AudioProcessor:
                     text=segment.text.strip(),
                     language=info.language
                 ))
+                if duration > 0:
+                    # Map 50% to 90%
+                    percent = 50 + int((segment.end / duration) * 40)
+                    update_progress(percent, f"Transcribing... {int(segment.end)}s / {int(duration)}s")
+            
             update_progress(90, "Transcription finished.")
         else:
             # Group contiguous segments of the same speaker to reduce model calls
@@ -147,7 +154,7 @@ class AudioProcessor:
 
             total_groups = len(grouped_segments)
             print(f"Transcribing {total_groups} speaker turns...")
-            update_progress(45, f"Transcribing {total_groups} speaker turns...")
+            update_progress(50, f"Transcribing {total_groups} speaker turns...")
             
             if waveform is None:
                 waveform, sample_rate = torchaudio.load(audio_path)
@@ -156,9 +163,11 @@ class AudioProcessor:
             
             # Transcribe each speaker turn individually
             for i, group in enumerate(grouped_segments):
-                # Map progress from 45% to 90%
-                current_p = 45 + int((i / total_groups) * 45)
-                update_progress(current_p, f"Transcribing turn {i+1}/{total_groups}...")
+                # Map progress from 50% to 90%
+                turn_start_p = 50 + int((i / total_groups) * 40)
+                turn_end_p = 50 + int(((i + 1) / total_groups) * 40)
+                
+                update_progress(turn_start_p, f"Transcribing turn {i+1}/{total_groups}...")
                 
                 start_sample = int(group["start"] * sample_rate)
                 end_sample = int(group["end"] * sample_rate)
@@ -179,6 +188,7 @@ class AudioProcessor:
                 
                 print(f"Turn {i+1}: detected language '{info.language}' for speaker {group['speaker']}")
                 
+                chunk_duration = info.duration
                 for segment in segments:
                     final_segments.append(TranscriptionSegment(
                         start=group["start"] + segment.start,
@@ -187,6 +197,11 @@ class AudioProcessor:
                         text=segment.text.strip(),
                         language=info.language
                     ))
+                    if chunk_duration > 0:
+                        # Fine-grained progress within the turn
+                        segment_p = turn_start_p + int((segment.end / chunk_duration) * (turn_end_p - turn_start_p))
+                        update_progress(segment_p, f"Transcribing turn {i+1}/{total_groups}...")
+
             update_progress(90, "Transcription finished.")
 
         return final_segments

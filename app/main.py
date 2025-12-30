@@ -34,7 +34,7 @@ def get_processor():
         processor = AudioProcessor()
     return processor
 
-async def process_task(task_id: str, input_path: str):
+def process_task(task_id: str, input_path: str):
     task = tasks[task_id]
     task.status = "processing"
     
@@ -49,12 +49,12 @@ async def process_task(task_id: str, input_path: str):
         
         on_progress(10, "Extracting audio...")
         extract_audio(input_path, audio_path)
-        on_progress(20, "Audio extracted.")
+        on_progress(25, "Audio extracted.")
         
         # 2. Process (Transcription + Diarization)
         global processor
         if processor is None:
-            on_progress(25, "Loading AI models (first time setup)...")
+            on_progress(30, "Loading AI models (first time setup)...")
         
         proc = get_processor()
         segments = proc.process(audio_path, progress_callback=on_progress)
