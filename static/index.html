@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multilingual Transcriber</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f4f4f9; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; }
+        .upload-section { margin-bottom: 30px; padding: 20px; border: 2px dashed #ccc; border-radius: 8px; text-align: center; }
+        .task-list { margin-top: 20px; }
+        .task-item { padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .task-info { flex-grow: 1; }
+        .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8em; font-weight: bold; }
+        .pending { background: #ffeeba; color: #856404; }
+        .processing { background: #b8daff; color: #004085; }
+        .completed { background: #c3e6cb; color: #155724; }
+        .failed { background: #f5c6cb; color: #721c24; }
+        .download-btn { text-decoration: none; background: #007bff; color: white; padding: 5px 10px; border-radius: 4px; font-size: 0.9em; margin-left: 5px; }
+        .progress-bar { width: 100%; background: #eee; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden; }
+        .progress-fill { background: #28a745; height: 100%; transition: width 0.3s; }
+        .upload-progress-container { display: none; margin-top: 15px; text-align: left; }
+        .upload-progress-text { font-size: 0.85em; color: #666; margin-bottom: 5px; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+        button:hover:not(:disabled) { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Audio/Video Transcriber</h1>
+        <p>Upload MP3 or MP4 for multilingual transcription and speaker diarization.</p>
+        
+        <div class="upload-section">
+            <input type="file" id="fileInput" accept=".mp3,.mp4,.wav,.m4a">
+            <button id="uploadBtn" onclick="uploadFile()">Upload & Process</button>
+            
+            <div id="uploadProgressContainer" class="upload-progress-container">
+                <div class="upload-progress-text">Uploading: <span id="uploadPercent">0</span>%</div>
+                <div class="progress-bar"><div id="uploadProgressFill" class="progress-fill" style="width: 0%"></div></div>
+            </div>
+        </div>
+
+        <div class="task-list" id="taskList">
+            <h3>Recent Tasks</h3>
+            <!-- Tasks will appear here -->
+        </div>
+    </div>
+
+    <script>
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const uploadProgressContainer = document.getElementById('uploadProgressContainer');
+            const uploadProgressFill = document.getElementById('uploadProgressFill');
+            const uploadPercent = document.getElementById('uploadPercent');
+
+            if (fileInput.files.length === 0) {
+                alert('Please select a file');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            uploadBtn.disabled = true;
+            uploadProgressContainer.style.display = 'block';
+            uploadProgressFill.style.width = '0%';
+            uploadPercent.innerText = '0';
+
+            try {
+                const xhr = new XMLHttpRequest();
+                
+                const uploadPromise = new Promise((resolve, reject) => {
+                    xhr.upload.addEventListener('progress', (e) => {
+                        if (e.lengthComputable) {
+                            const percent = Math.round((e.loaded * 100) / e.total);
+                            uploadProgressFill.style.width = percent + '%';
+                            uploadPercent.innerText = percent;
+                        }
+                    });
+
+                    xhr.onreadystatechange = () => {
+                        if (xhr.readyState === XMLHttpRequest.DONE) {
+                            if (xhr.status >= 200 && xhr.status < 300) {
+                                try {
+                                    resolve(JSON.parse(xhr.responseText));
+                                } catch (e) {
+                                    reject(new Error('Invalid response from server'));
+                                }
+                            } else {
+                                try {
+                                    const error = JSON.parse(xhr.responseText);
+                                    reject(new Error(error.detail || 'Upload failed'));
+                                } catch (e) {
+                                    reject(new Error('Upload failed with status ' + xhr.status));
+                                }
+                            }
+                        }
+                    };
+
+                    xhr.onerror = () => reject(new Error('Network error'));
+                    xhr.open('POST', '/api/upload');
+                    xhr.send(formData);
+                });
+
+                await uploadPromise;
+                fileInput.value = '';
+                uploadProgressContainer.style.display = 'none';
+                fetchTasks();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error: ' + error.message);
+                uploadProgressContainer.style.display = 'none';
+            } finally {
+                uploadBtn.disabled = false;
+            }
+        }
+
+        async function fetchTasks() {
+            try {
+                const response = await fetch('/api/tasks');
+                if (!response.ok) return;
+                
+                const tasks = await response.json();
+                const taskList = document.getElementById('taskList');
+                
+                // If no tasks, show a message
+                if (tasks.length === 0) {
+                    taskList.innerHTML = '<h3>Recent Tasks</h3><p>No tasks yet.</p>';
+                    return;
+                }
+
+                // Header
+                let html = '<h3>Recent Tasks</h3>';
+
+                tasks.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).forEach(task => {
+                    const progressHtml = (task.status === 'processing' || task.status === 'pending')
+                        ? `<div class="progress-bar"><div class="progress-fill" style="width: ${task.progress}%"></div></div>`
+                        : '';
+                    
+                    const statusLabel = task.status.toUpperCase();
+                    const timeStr = new Date(task.created_at).toLocaleString();
+
+                    html += `
+                        <div class="task-item" id="task-${task.task_id}">
+                            <div class="task-info">
+                                <strong>${task.filename}</strong><br>
+                                <small>${timeStr}</small>
+                                ${progressHtml}
+                                <div style="font-size: 0.85em; color: #666; margin-top: 5px;">${task.message || ''}</div>
+                            </div>
+                            <div style="text-align: right; min-width: 120px;">
+                                <span class="status-badge ${task.status}">${statusLabel}</span>
+                                <div style="margin-top: 10px;">
+                                    ${task.status === 'completed' ? `
+                                        <a href="${task.result_url}?format=txt" class="download-btn" target="_blank">TXT</a>
+                                        <a href="${task.result_url}?format=json" class="download-btn" target="_blank">JSON</a>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                taskList.innerHTML = html;
+            } catch (error) {
+                console.error('Error fetching tasks:', error);
+            }
+        }
+
+        // Poll for updates every 2 seconds
+        setInterval(fetchTasks, 2000);
+        fetchTasks();
+    </script>
+</body>
+</html>
