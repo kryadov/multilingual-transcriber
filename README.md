@@ -36,9 +36,9 @@ To utilize your NVIDIA GPU for faster processing, you must ensure that the versi
    Run `nvidia-smi` in your terminal to see your installed CUDA version.
 
 2. **Install Torch with CUDA**:
-   Go to the [official PyTorch website](https://pytorch.org/get-started/locally/) and select the command for your OS and CUDA version. For example, for CUDA 12.1:
+   Go to the [official PyTorch website](https://pytorch.org/get-started/locally/) and select the command for your OS and CUDA version. For example, for CUDA 12.6/12.8/12.9:
    ```bash
-   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu129
    ```
 
 3. **Verify GPU availability**:
@@ -81,6 +81,10 @@ Start the FastAPI server:
 python -m app.main
 ```
 The application will be available at `http://localhost:8000`.
+
+## Demo
+
+A sample file `demo/en-ru-demo.m4a` is provided to test the multilingual transcription and speaker diarization capabilities. You can upload this file through the web interface to see the results.
 
 ## API Endpoints
 
