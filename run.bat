@@ -13,6 +13,11 @@ if exist .venv\Scripts\activate.bat (
 )
 
 echo Starting Multilingual Transcriber...
+python -c "import fastapi" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Dependencies not found. Installing from requirements.txt...
+    pip install -r requirements.txt
+)
 python -m app.main
 pause
 endlocal

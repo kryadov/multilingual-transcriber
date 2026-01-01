@@ -79,8 +79,8 @@ Speaker diarization requires a Hugging Face token to download the pre-trained mo
 You can start the FastAPI server using the provided scripts or manually:
 
 ### Using Scripts
-- **Windows**: Double-click `run.bat` or run `.\run.bat` in your terminal. This script will automatically activate the virtual environment if it exists (`.venv` or `venv`).
-- **Linux/macOS**: Run `./run.sh` (you may need to give it execution permissions first: `chmod +x run.sh`). This script will automatically activate the virtual environment if it exists (`.venv` or `venv`).
+- **Windows**: Double-click `run.bat` or run `.\run.bat` in your terminal. This script will automatically activate the virtual environment if it exists (`.venv` or `venv`) and install missing dependencies.
+- **Linux/macOS**: Run `./run.sh` (you may need to give it execution permissions first: `chmod +x run.sh`). This script will automatically activate the virtual environment if it exists (`.venv` or `venv`) and install missing dependencies.
 
 ### Manually
 ```bash
