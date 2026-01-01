@@ -121,15 +121,21 @@ async def get_status(task_id: str):
 
 @app.get("/api/download/{task_id}")
 async def download_result(task_id: str, format: str = "txt"):
-    filename = f"{task_id}.{format}"
-    file_path = os.path.join(OUTPUT_DIR, filename)
-    
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task = tasks[task_id]
+    base_name = os.path.splitext(task.filename)[0]
+    download_filename = f"{base_name}.{format}"
+
+    file_path = os.path.join(OUTPUT_DIR, f"{task_id}.{format}")
+
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Result file not found")
-    
+
     return FileResponse(
         path=file_path,
-        filename=f"transcription_{task_id}.{format}",
+        filename=download_filename,
         media_type="application/octet-stream"
     )
 
