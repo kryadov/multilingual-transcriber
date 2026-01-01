@@ -12,6 +12,7 @@ warnings.filterwarnings("ignore", message=r".*TensorFloat-32 \(TF32\) has been d
 warnings.filterwarnings("ignore", message=r".*std\(\): degrees of freedom is <= 0.*")
 from pyannote.audio import Pipeline
 import torchaudio
+import concurrent.futures
 from typing import List, Dict, Any, Optional, Callable
 import datetime
 from .models import TranscriptionSegment
@@ -31,12 +32,16 @@ class AudioProcessor:
         
         # Initialize Faster Whisper
         # We use 'large-v3' for best multilingual support (EN/RU)
-        # or 'medium' as a balanced choice.
+        num_workers = int(os.getenv("TRANSCRIPTION_WORKERS", "2" if self.device == "cuda" else "4"))
+        print(f"Loading WhisperModel with {num_workers} workers...")
+        
         self.whisper_model = WhisperModel(
             "large-v3", 
             device=self.device, 
-            compute_type=self.compute_type
+            compute_type=self.compute_type,
+            num_workers=num_workers
         )
+        self.num_workers = num_workers
         
         # Initialize Pyannote Diarization
         # Requires HUGGING_FACE_HUB_TOKEN in .env
@@ -161,47 +166,61 @@ class AudioProcessor:
                 if waveform.shape[0] > 1:
                     waveform = torch.mean(waveform, dim=0, keepdim=True)
             
-            # Transcribe each speaker turn individually
-            for i, group in enumerate(grouped_segments):
-                # Map progress from 50% to 90%
-                turn_start_p = 50 + int((i / total_groups) * 40)
-                turn_end_p = 50 + int(((i + 1) / total_groups) * 40)
-                
-                update_progress(turn_start_p, f"Transcribing turn {i+1}/{total_groups}...")
-                
-                start_sample = int(group["start"] * sample_rate)
-                end_sample = int(group["end"] * sample_rate)
-                
-                # Avoid processing extremely short slices
-                if end_sample - start_sample < 1600:  # Less than 0.1s
-                    continue
+            # Transcribe each speaker turn in parallel
+            results = []
+            completed_turns = 0
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.num_workers) as executor:
+                futures = []
+                for i, group in enumerate(grouped_segments):
+                    start_sample = int(group["start"] * sample_rate)
+                    end_sample = int(group["end"] * sample_rate)
                     
-                audio_chunk = waveform[0, start_sample:end_sample].numpy()
-                
-                # Transcribe chunk
-                segments, info = self.whisper_model.transcribe(
-                    audio_chunk,
-                    beam_size=5,
-                    word_timestamps=True,
-                    initial_prompt=initial_prompt
-                )
-                
-                print(f"Turn {i+1}: detected language '{info.language}' for speaker {group['speaker']}")
-                
-                chunk_duration = info.duration
-                for segment in segments:
-                    final_segments.append(TranscriptionSegment(
-                        start=group["start"] + segment.start,
-                        end=group["start"] + segment.end,
-                        speaker=group["speaker"],
-                        text=segment.text.strip(),
-                        language=info.language
+                    if end_sample - start_sample < 1600:  # Less than 0.1s
+                        continue
+                        
+                    audio_chunk = waveform[0, start_sample:end_sample].numpy()
+                    futures.append(executor.submit(
+                        self._transcribe_chunk, i, group, audio_chunk, initial_prompt
                     ))
-                    if chunk_duration > 0:
-                        # Fine-grained progress within the turn
-                        segment_p = turn_start_p + int((segment.end / chunk_duration) * (turn_end_p - turn_start_p))
-                        update_progress(segment_p, f"Transcribing turn {i+1}/{total_groups}...")
+                
+                total_valid_groups = len(futures)
+                if total_valid_groups > 0:
+                    for future in concurrent.futures.as_completed(futures):
+                        try:
+                            idx, chunk_segments = future.result()
+                            results.append((idx, chunk_segments))
+                            completed_turns += 1
+                            
+                            percent = 50 + int((completed_turns / total_valid_groups) * 40)
+                            update_progress(percent, f"Transcribing turns {completed_turns}/{total_valid_groups}...")
+                        except Exception as e:
+                            print(f"Error transcribing chunk: {e}")
+                
+            # Sort results by index to maintain original order
+            results.sort(key=lambda x: x[0])
+            for _, chunk_segments in results:
+                final_segments.extend(chunk_segments)
 
             update_progress(90, "Transcription finished.")
 
         return final_segments
+
+    def _transcribe_chunk(self, idx: int, group: Dict[str, Any], audio_chunk: np.ndarray, initial_prompt: str) -> tuple:
+        segments, info = self.whisper_model.transcribe(
+            audio_chunk,
+            beam_size=5,
+            word_timestamps=True,
+            initial_prompt=initial_prompt
+        )
+        
+        chunk_segments = []
+        for segment in segments:
+            chunk_segments.append(TranscriptionSegment(
+                start=group["start"] + segment.start,
+                end=group["start"] + segment.end,
+                speaker=group["speaker"],
+                text=segment.text.strip(),
+                language=info.language
+            ))
+        return idx, chunk_segments

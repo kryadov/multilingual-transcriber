@@ -8,6 +8,7 @@ This application allows you to upload audio and video files (MP3, MP4, WAV, M4A)
 - **Speaker Diarization**: Identifies and labels different speakers in the transcription.
 - **Background Processing**: Uses a task queue to process files in the background.
 - **Local Execution**: No external API calls (like OpenAI API) are made for processing. All models run locally on your hardware.
+- **High Performance**: Supports parallel transcription of speaker turns to fully utilize CPU/GPU resources.
 - **Downloadable Results**: Results are available in TXT and JSON formats.
 
 ## Requirements
@@ -73,6 +74,11 @@ Speaker diarization requires a Hugging Face token to download the pre-trained mo
    ```env
    HUGGING_FACE_HUB_TOKEN=your_token_here
    ```
+5. (Optional) Adjust the number of parallel transcription workers in `.env`:
+   ```env
+   TRANSCRIPTION_WORKERS=2
+   ```
+   *Defaults to 2 for GPU and 4 for CPU.*
 
 ## Running the Application
 
@@ -98,11 +104,11 @@ The application provides several API endpoints for programmatic access:
 
 - **POST `/api/upload`**: Upload an audio or video file. Returns a `task_id`.
 - **GET `/api/status/{task_id}`**: Get the current status and progress of a task.
-- **GET `/api/download/{task_id}?format={txt|json}`**: Download the transcription result.
+- **GET `/api/download/{task_id}?format={txt|json}`**: Download the transcription result. The downloaded file will have the same basename as the original uploaded file.
 - **GET `/api/tasks`**: List all recent tasks.
 
 ## How it works
 1. **Audio Extraction**: The uploaded file is converted to a 16kHz mono WAV file using FFmpeg.
 2. **Diarization**: The `pyannote/speaker-diarization-3.1` model identifies speaker turns (who spoke when).
-3. **Segmented Transcription**: Each speaker turn is processed individually by `faster-whisper` (`large-v3` by default). This allows the model to re-detect the language for each turn, ensuring that both Russian and English are captured correctly even in a single conversation.
+3. **Parallel Segmented Transcription**: Speaker turns are processed in parallel using `faster-whisper` (`large-v3` by default). This significantly speeds up the process on multi-core CPUs and GPUs while allowing the model to re-detect the language for each turn, ensuring that both Russian and English are captured correctly even in a single conversation.
 4. **Final Assembly**: The transcriptions are combined into a single timeline with speaker labels and detected language tags.
