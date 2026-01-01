@@ -24,8 +24,8 @@ This application allows you to upload audio and video files (MP3, MP4, WAV, M4A)
    ```
    *Note: By default, this may install the CPU-only version of PyTorch. If you have an NVIDIA GPU, see the [GPU Support](#gpu-support) section below.*
 
-3. Install FFmpeg (if not already installed).
-   - Windows: `choco install ffmpeg`
+3. Install FFmpeg 7 (if not already installed).
+   - Windows: `choco install ffmpeg` or visit https://winget-testing.com/BtbN.FFmpeg.GPL.7.1.html
    - Linux: `sudo apt install ffmpeg`
 
 ## GPU Support
